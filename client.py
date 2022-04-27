@@ -23,3 +23,10 @@ clientSocket.sendto(message.encode(), (SERVER_IP, SERVER_PORT))
 
 # LISTENING FOR RESPONSE
 message, SERVER_IP = clientSocket.recvfrom(4096)
+message.decode("utf8")
+req, mac, ip, time = message.split()
+
+if message == "OFFER":
+    print("OFFER RECIEVED")
+
+
