@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 # records will have tuples in them
 # {(record number, mac, ip, timestamp, acked(bool))}
 records = list()
+#{mac, tuple(record id, ip, timestamp, acked)}
+_records = dict()
 
 # List containing all available IP addresses as strings
 ip_addresses = [ip.exploded for ip in IPv4Interface("192.168.45.0/28").network.hosts()]
@@ -60,59 +62,77 @@ def dhcp_operation(parsed_message):
     request = request.decode("utf8")
     if request == "LIST":
         print("LIST MESSAGE")
- 
       
     elif request == "DISCOVER":
         request, mac = parsed_message
         mac = mac.decode("utf8")
-        for rec in records:
-            if mac in rec:
-                isotimestring = datetime.now().isoformat()    
-                timestamp = datetime.fromisoformat(isotimestring)   
-                old = rec[3]
 
-                if old > timestamp:
-                    print("Still valid, just acknowledge")
-                    rec[4] = True
-                    response = "ACKNOWLEDGE " + mac + rec[2] + timestamp
-                    return response
-
-                else:
-                    print("Need to renew")
-
-     
-       
-
-        if mac in records:  #when getting discover, we check records  
-            print("Found mac in records, so check timestamp for expire")  
+        if mac in _records:
+            print("Found")
+            isotimestring = datetime.now().isoformat()    
+            timestamp = datetime.fromisoformat(isotimestring)
+            old = _records[mac]
+            oldTime = old[2]
+            print(oldTime)
             
         else:
-            print("Not found, trying to add to records")
-            if len(ip_addresses) != 0:                      #still have ip to use
-                isotimestring = datetime.now().isoformat()    
-                timestamp = datetime.fromisoformat(isotimestring)               
+            print("Mac not in records")
+            if(len(ip_addresses) != 0):
+                print("```Offering IP```")
+                isotimestring = datetime.now().isoformat()
+                timestamp = datetime.fromisoformat(isotimestring)
                 secfromnow = timestamp + timedelta(seconds=60)
 
-                newIP = ip_addresses.pop(0)
+                newIP = ip_addresses.pop(0)               
+                newUser = (len(records), newIP, secfromnow, False)  #new user = (record #, server offer ip, timestamp, acked)
+                    
+                _records[mac] = newUser
 
-                newUser = (len(records), mac, newIP, secfromnow, False)
-                
-                records.append(newUser)
-                
                 #return an offer
                 response = "OFFER " + mac + " " + newIP + " " + str(secfromnow)
                 return response
             else:
-                print("go through records to check for valid ip")
-                
+                print("```No more IP to allocate```")
 
-            
-            
-            
+
+        #for rec in records:
+        #    if mac in rec:
+        #        isotimestring = datetime.now().isoformat()    
+         #       timestamp = datetime.fromisoformat(isotimestring)   
+         #       old = rec[3]
+          #      
+           #     if old > timestamp:
+            #        print("Still valid, just acknowledge")
+             #       _rec = (rec[0], rec[1], rec[2], rec[3], True)       
+              #      records.remove(rec)         
+               ##    print(records) #delete later
+                 #   response = "ACKNOWLEDGE " + " " + mac + " " + _rec[2] + " " + str(timestamp)
+                  #  return response
+
+                #else:
+                 #   print("Need to renew")
+            #else:
+             #   print("Not found, trying to add to records")
+              #  if len(ip_addresses) != 0:                      #still have ip to use
+              #      isotimestring = datetime.now().isoformat()
+               #     timestamp = datetime.fromisoformat(isotimestring)
+                #    secfromnow = timestamp + timedelta(seconds=60)
+
+                 #   newIP = ip_addresses.pop(0)
+
+                  #  newUser = (len(records), mac, newIP, secfromnow, False)
+                    
+                   # records.append(newUser)
+                    
+                    #return an offer
+                   # response = "OFFER " + mac + " " + newIP + " " + str(secfromnow)
+                    #return response
+
 
     elif request == "REQUEST":
         print("REQUEST MESSAGE")
-        #respond wit hacknowledge
+        #respond with acknowledge
+        
 
     elif request == "RELEASE":
         print("RELEASE MESSAGE")
