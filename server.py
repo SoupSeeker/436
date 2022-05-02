@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 # records will have tuples in them
 # {(record number, mac, ip, timestamp, acked(bool))}
 records = list()
+#{mac, tuple(record id, ip, timestamp, acked)}
+_records = dict()
 
 # List containing all available IP addresses as strings
 ip_addresses = [ip.exploded for ip in IPv4Interface("192.168.45.0/28").network.hosts()]
@@ -59,68 +61,107 @@ def dhcp_operation(parsed_message):
     request = parsed_message[0] #request is always first
     request = request.decode("utf8")
     if request == "LIST":
-        print("LIST MESSAGE")
- 
-      
+        print("server: LIST RECIEVED")
+        response = "LIST " + str(_records)
+        return response
     elif request == "DISCOVER":
         request, mac = parsed_message
         mac = mac.decode("utf8")
-        for rec in records:
-            if mac in rec:
-                isotimestring = datetime.now().isoformat()    
-                timestamp = datetime.fromisoformat(isotimestring)   
-                old = rec[3]
+        print("server: DISCOVER RECIEVED")
 
-                if old > timestamp:
-                    print("Still valid, just acknowledge")
-                    rec[4] = True
-                    response = "ACKNOWLEDGE " + mac + rec[2] + timestamp
-                    return response
+        if mac in _records:
+            print("server: User in records")
+            isotimestring = datetime.now().isoformat()    
+            timestamp = datetime.fromisoformat(isotimestring)
+            old = _records[mac]
 
-                else:
-                    print("Need to renew")
-
-     
-       
-
-        if mac in records:  #when getting discover, we check records  
-            print("Found mac in records, so check timestamp for expire")  
+            if str(old[2]) > str(timestamp.time()):
+                new = (old[0], old[1], old[2], True)
+                _records[mac] = new
+                print("server: Acknowledging user")
+                response = "ACKNOWLEDGE  " + mac + " " + new[1] + " " + str(new[2])
+                return response
+                
             
         else:
-            print("Not found, trying to add to records")
-            if len(ip_addresses) != 0:                      #still have ip to use
-                isotimestring = datetime.now().isoformat()    
-                timestamp = datetime.fromisoformat(isotimestring)               
+            print("server: User not in records")
+            if(len(ip_addresses) != 0):
+                isotimestring = datetime.now().isoformat()
+                timestamp = datetime.fromisoformat(isotimestring)
                 secfromnow = timestamp + timedelta(seconds=60)
 
-                newIP = ip_addresses.pop(0)
+                newIP = ip_addresses.pop(0)               
+                newUser = (len(_records), newIP, secfromnow, False)  #new user = (record #, server offer ip, timestamp, acked)
+                    
+                _records[mac] = newUser
 
-                newUser = (len(records), mac, newIP, secfromnow, False)
-                
-                records.append(newUser)
-                
                 #return an offer
+                print("server: Offering IP")                
                 response = "OFFER " + mac + " " + newIP + " " + str(secfromnow)
                 return response
             else:
-                print("go through records to check for valid ip")
-                
+                print("server: No more IP to allocate")
 
-            
-            
-            
 
     elif request == "REQUEST":
-        print("REQUEST MESSAGE")
-        #respond wit hacknowledge
+        print("server: REQUEST RECIEVED")
+        mac = parsed_message[1].decode("utf8")
+        ip = parsed_message[2].decode("utf8")
+        date = parsed_message[3].decode("utf8")
+        time = parsed_message[4].decode("utf8")
+        #respond with acknowledge
+        rec = _records[mac]
+
+        if ip in rec:
+            isotimestring = datetime.now().isoformat()
+            timestamp = datetime.fromisoformat(isotimestring)
+            if(time > str(timestamp.time())):
+                _records[mac] = (len(_records), ip, time, True)              
+
+                response = "ACKNOWLEDGE " + mac + " " +_records[mac][1] + " " + str(_records[mac][2])
+                return response
+            else:
+                response = "DECLINE"
+                return response
+
 
     elif request == "RELEASE":
-        print("RELEASE MESSAGE")
-        #get rid of ip?
+        print("server: RELEASE MESSAGE")
+        mac = parsed_message[1].decode("utf8")
+        ip = parsed_message[2].decode("utf8")
+        time = parsed_message[3].decode("utf8")
+     
+
+        if mac in _records:
+            ip_addresses.append(ip)         #since we popped the ip_addresses, lets push the ip back in
+            del _records[mac]
+            isotimestring = datetime.now().isoformat()
+            timestamp = datetime.fromisoformat(isotimestring)
+            _records[mac] = (len(_records), 0, timestamp, False)
+            
+            response = ""
+            return response
+
 
     elif request == "RENEW":
-        print("RENEW MESSAGE")
-        #send ack and time
+        print("server: RENEW MESSAGE")
+        mac = parsed_message[1].decode("utf8")
+        ip = parsed_message[2].decode("utf8")
+        time = parsed_message[3].decode("utf8")
+
+        if mac in _records:
+            isotimestring = datetime.now().isoformat()    
+            timestamp = datetime.fromisoformat(isotimestring)
+            secfromnow = timestamp + timedelta(seconds=60)
+
+            renewUser = (len(_records), ip_addresses.pop(), secfromnow, True)
+            _records[mac] = renewUser
+            response = "ACKNOWLEDGE " + mac + " " +_records[mac][1] + " " + str(_records[mac][2])
+            return response
+
+        else:
+            #check the ip pool for a new ip
+            print("server: else")
 
 
 # Start a UDP server
@@ -128,7 +169,7 @@ server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 # Avoid TIME_WAIT socket lock [DO NOT REMOVE]
 server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 server.bind(("", 9000))
-print("DHCP Server running...")
+print("server: DHCP Server running...")
 
 try:
     while True:
